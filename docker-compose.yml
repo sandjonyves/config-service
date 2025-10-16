@@ -1,0 +1,103 @@
+version: "1"
+
+
+services:
+  bank-config-service:
+    build: ./bank-config-service
+    container_name: bank-config-service
+    ports:
+      - "8000:8000"
+    environment:
+      - SPRING_APPLICATION_NAME=bank-config-service
+      - SERVER_PORT=8000
+      - SPRING_CLOUD_CONFIG_SERVER_GIT_URI=https://github.com/sandjonyves/bank-config.git
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bank-network
+
+
+
+  bank-registry-service:
+    build: ./bank-registry-service
+    container_name: bank-registry-service
+    ports:
+      - "8761:8761"
+    environment:
+      -   SPRING_APPLICATION_NAME=bank-registry-service
+      -   SERVER_PORT=8761
+      -   SPRING_CLOUD_CONFIG_URI=http://bank-config-service:8000
+      -   SPRING_CONFIG_IMPORT=configserver:http://bank-config-service:8000
+    depends_on:
+      bank-config-service:
+        condition: service_healthy
+
+    networks:
+      - bank-network
+  
+
+  # SERVICE PROXY
+  bank-proxy-service:
+    build: ./bank-proxy-service
+    container_name: bank-proxy-service
+    ports:
+      - "8081:8081"
+    environment:
+      -   SPRING_APPLICATION_NAME=bank-proxy-service
+      -   SERVER_PORT=8081
+      -   SPRING_CLOUD_CONFIG_URI=http://bank-config-service:8000
+      -   SPRING_CONFIG_IMPORT=configserver:http://bank-config-service:8000
+    depends_on:
+      - bank-config-service
+      - bank-registry-service
+
+    networks:
+      - bank-network
+
+
+# DATABASE IMAGE
+  bank-user-db:
+    image: mysql:8.1
+    container_name: bank-user-db
+    restart: always
+
+    environment:
+      MYSQL_DATABASE: bank_user_db
+      MYSQL_name: bank_user
+      MYQL_PASSWORD: bankpass
+    
+    ports:
+      - "3307:3307"
+    networks:
+      - bank-network 
+
+# SERVICE USER
+  bank-user-service:
+    build: ./bank-user-service
+    container_name: bank-user-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_APPLICATION_NAME=bank-user-service
+      -   SERVER_PORT= 8082
+      -   SPRING_CLOUD_CONFIG_URI=http://bank-config-service:8000
+      -   SPRING_CONFIG_IMPORT=configserver:http://bank-config-service:8000
+    
+    depends_on:
+      - bank-config-service
+      - bank-registry-service
+      - bank-user-db
+    networks:
+      - bank-network
+
+
+networks:
+  bank-network:
+    driver: bridge
+
+
+volumes:
+  bank_user_data:
